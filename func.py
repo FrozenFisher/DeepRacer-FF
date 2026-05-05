@@ -20,11 +20,11 @@ def reward_function(params):
     reward += 4.0
 
     # 单位步数推进进度：鼓励少步数跑完全程
-    reward += (progress / steps) * 0.15
+    reward += (progress / steps) * 100.0
 
     # 直道（center 段）适度奖励速度，平方放大高速度但系数收敛，避免数值爆掉
     if p in center:
-        reward += min(speed ** 2 * 2.0, 20.0)
+        reward += speed ** 2 * 10.0
 
     # 相对中心线的「贴线」程度，0~1
     half = max(track_w * 0.5, 1e-6)
@@ -32,20 +32,16 @@ def reward_function(params):
 
     # 行车线：按段落要求左右 / 中线
     if p in left and params["is_left_of_center"]:
-        reward += 3.0 + 5.0 * on_line
+        reward += 5.0 + 5.0 * on_line
     elif p in right and not params["is_left_of_center"]:
-        reward += 3.0 + 5.0 * on_line
+        reward += 5.0 + 5.0 * on_line
     elif p in center:
         # 直道鼓励贴近中心；略宽阈值内满分，之外按距离衰减
         if d_center < track_w * 0.12:
-            reward += 6.0 + 2.0 * on_line
+            reward += 8.0 + 2.0 * on_line
         else:
             reward += 1.5 * on_line
     else:
-        reward -= 2.5
-
-    # 弯道上略惩罚大方向盘，减少来回画龙
-    if p not in center:
-        reward -= 0.08 * abs(params["steering_angle"])
+        reward -= 6
 
     return float(max(reward, 1e-3))
