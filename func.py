@@ -122,27 +122,16 @@ def _pick_target_by_ray_angles(p_car, p1, p2, p3):
     a12 = _angle_between_vecs(v1x, v1y, v2x, v2y)
     a23 = _angle_between_vecs(v2x, v2y, v3x, v3y)
     spread = a12 + a23
-    # 经验阈值（弧度）；
-    if spread < 6.88 / 360 * 2 * math.pi:
+    # 夹角阈值（弧度）：缩小「最远点」区间，大弯/缓弯更多用中距前瞻，减少切弯过猛出线。
+    # 原 6.88° / 16.53°；略压低最远档、拉开中档，急弯仍用最近点。
+    if spread < 4.2 / 360 * 2 * math.pi:
         return p3, spread
-    if spread < 16.53 / 360 * 2 * math.pi:
+    if spread < 13.5 / 360 * 2 * math.pi:
         return p2, spread
     return p1, spread
 
 
 def reward_function(params):
-    left = set(range(34, 43)) | set(range(65, 72)) | set(range(83, 88)) | set(range(105, 110))
-    center = (
-        set(range(28, 32))
-        | set(range(44, 50))
-        | set(range(59, 62))
-        | set(range(75, 80))
-        | set(range(91, 95))
-        | {103}
-        | set(range(115, 117))
-    )
-    right = set(range(1, 25)) | set(range(50, 57)) | set(range(95, 100))
-
     p = params["closest_waypoints"][1]
     prev_p = params["closest_waypoints"][0]
     track_w = params["track_width"]
@@ -151,7 +140,6 @@ def reward_function(params):
     steering_angle = float(params["steering_angle"])
     steps = max(int(params["steps"]), 1)
     progress = params["progress"]
-    is_left = params["is_left_of_center"]
 
     cx = float(params["x"])
     cy = float(params["y"])
@@ -176,28 +164,14 @@ def reward_function(params):
     speed_match = max(0.0, 1.0 - min(1.0, speed_ratio_err))
     reward += (speed ** 2) * 13.0 * speed_match * (0.35 + 0.65 * on_line)
 
-    # —— 1×、1.5×、2× 于 (0.67 * track_width) 的前瞻距，三条射线夹角决定目标点 ——
-    base_look = max(0.67 * track_w, 1e-6)
-    d1, d2, d3 = base_look, 1.5 * base_look, 2.0 * base_look
+    # —— 1×、1.5×、1.75× 于 (0.62 * track_width) 的前瞻距，三条射线夹角决定目标点 ——
+    base_look = max(0.62 * track_w, 1e-6)
+    d1, d2, d3 = base_look, 1.5 * base_look, 1.75 * base_look
     pts = _forward_center_points(waypoints, prev_p, p, cx, cy, [d1, d2, d3])
     target, spread = _pick_target_by_ray_angles((cx, cy), pts[0], pts[1], pts[2])
     bear = math.atan2(target[1] - cy, target[0] - cx)
     h_align = max(0.0, math.cos(_angle_norm(bear - heading)))
-    reward += 6.0 * h_align
+    reward += 7.5 * h_align
     reward += 2.0 * max(0.0, 1.0 - spread / math.pi)
-
-    tw = track_w
-    if p in left and is_left and tw * 0.25 <= d_center <= tw * 0.4:
-        reward += 1.75
-    elif p in right and (not is_left) and tw * 0.25 <= d_center <= tw * 0.4:
-        reward += 2.25
-    elif p in center and d_center <= tw * 0.1:
-        reward += 2.25
-    elif p in left and is_left and tw * 0.1 <= d_center < tw * 0.25:
-        reward += 0.9
-    elif p in right and (not is_left) and tw * 0.1 <= d_center < tw * 0.25:
-        reward += 0.9
-    elif p in center and tw * 0.1 <= d_center < tw * 0.25:
-        reward += 0.9
 
     return float(max(reward, 1e-3))
