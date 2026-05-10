@@ -153,18 +153,13 @@ def reward_function(params):
 
     reward += 4.0
 
-    reward += (progress / steps) * 1.5
+    # 略加重进度，利于长直道阶段积累信号（相对弯里减速仍为正）
+    reward += (progress / steps) * 2.0
 
     half = max(track_w * 0.5, 1e-6)
     on_line = max(0.0, 1.0 - (d_center / half))
 
-    target_speed = _target_speed_for_steering(steering_angle, STtV)
-    den = max(target_speed, 0.25)
-    speed_ratio_err = abs(speed - target_speed) / den
-    speed_match = max(0.0, 1.0 - min(1.0, speed_ratio_err))
-    reward += (speed ** 2) * 13.0 * speed_match * (0.35 + 0.65 * on_line)
-
-    # —— 1×、1.5×、1.75× 于 (0.62 * track_width) 的前瞻距，三条射线夹角决定目标点 ——
+    # —— 中心线弧长前瞻 + 射线夹角（先于速度项，供弯速缩放）——
     base_look = max(0.62 * track_w, 1e-6)
     d1, d2, d3 = base_look, 1.5 * base_look, 1.75 * base_look
     pts = _forward_center_points(waypoints, prev_p, p, cx, cy, [d1, d2, d3])
@@ -173,5 +168,21 @@ def reward_function(params):
     h_align = max(0.0, math.cos(_angle_norm(bear - heading)))
     reward += 7.5 * h_align
     reward += 2.0 * max(0.0, 1.0 - spread / math.pi)
+
+    # 额外贴中：靠外侧仍在道上时略减分
+    lateral = min(1.0, d_center / half)
+    reward += 1.2 * (on_line ** 2)
+
+    target_speed = _target_speed_for_steering(steering_angle, STtV)
+    den = max(target_speed, 0.25)
+    speed_ratio_err = abs(speed - target_speed) / den
+    speed_match = max(0.0, 1.0 - min(1.0, speed_ratio_err))
+
+    steer_turn = min(1.0, abs(steering_angle) / 30.0)
+    straight_factor = 0.2 + 0.8 * (1.0 - steer_turn ** 1.2)
+    curve_factor = 0.25 + 0.75 * max(0.0, 1.0 - spread / (0.52 * math.pi))
+    speed_scale = straight_factor * curve_factor
+   
+    reward += (speed ** 1.65) * 10.5 * speed_match * (0.35 + 0.65 * on_line) * speed_scale
 
     return float(max(reward, 1e-3))
